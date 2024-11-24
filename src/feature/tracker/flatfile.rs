@@ -11,7 +11,7 @@ use std::{
     path::PathBuf,
 };
 
-use super::{EndTime, StartTime, TimeRecord};
+use super::{EndTime, StartTime, StartupStatus, TimeRecord, Tracker, TrackerError};
 
 #[derive(Debug, thiserror::Error)]
 #[error("file system tracker error")]
@@ -49,14 +49,20 @@ impl FlatFileTracker {
 
         FlatFileTracker { database, lockfile }
     }
+}
 
-    fn start(&self) -> Result<(), FlatFileTrackerError> {
+impl Tracker for FlatFileTracker {
+    fn start(&mut self) -> Result<StartupStatus, TrackerError> {
+        if self.lockfile.exists() {
+            return Ok(StartupStatus::Running);
+        }
+
         let lockfile_data = {
             let start_time = StartTime::now();
             let data = LockfileData { start_time };
 
             serde_json::to_string(&data)
-                .change_context(FlatFileTrackerError)
+                .change_context(TrackerError)
                 .attach_printable("unable to serialize lockfile data when starting tracker")?
         };
 
@@ -64,20 +70,20 @@ impl FlatFileTracker {
             .write(true)
             .create_new(true)
             .open(&self.lockfile)
-            .change_context(FlatFileTrackerError)
+            .change_context(TrackerError)
             .attach_printable("unable to create new lockfile when starting tracker")?
             .write_all(lockfile_data.as_bytes())
-            .change_context(FlatFileTrackerError)
+            .change_context(TrackerError)
             .attach_printable("unable to write lockfile data when starting tracker")?;
 
-        Ok(())
+        Ok(StartupStatus::Started)
     }
 
     fn is_running(&self) -> bool {
         self.lockfile.exists()
     }
 
-    fn stop(&self) -> Result<(), FlatFileTrackerError> {
+    fn stop(&mut self) -> Result<(), TrackerError> {
         let start = read_lockfile(&self.lockfile)?.start_time;
         let end = EndTime::now();
 
@@ -88,7 +94,7 @@ impl FlatFileTracker {
         save_database(&self.database, &db)?;
 
         std::fs::remove_file(&self.lockfile)
-            .change_context(FlatFileTrackerError)
+            .change_context(TrackerError)
             .attach_printable("unable to remove lockfile when stopping tracker")?;
 
         Ok(())
@@ -99,18 +105,18 @@ impl FlatFileTracker {
         !db.records.is_empty()
     }
 
-    fn records(&self) -> Result<impl Iterator<Item = TimeRecord>, FlatFileTrackerError> {
+    fn records(&self) -> Result<impl Iterator<Item = TimeRecord>, TrackerError> {
         let db = load_database(&self.database)?;
         Ok(db.records.into_iter())
     }
 }
 
-fn save_database<P>(path: P, db: &FlatFileDatabase) -> Result<(), FlatFileTrackerError>
+fn save_database<P>(path: P, db: &FlatFileDatabase) -> Result<(), TrackerError>
 where
     P: AsRef<std::path::Path>,
 {
     let db = serde_json::to_string(&db)
-        .change_context(FlatFileTrackerError)
+        .change_context(TrackerError)
         .attach_printable("failed to serialize database")?;
 
     OpenOptions::new()
@@ -118,16 +124,16 @@ where
         .create(true)
         .truncate(false)
         .open(path.as_ref())
-        .change_context(FlatFileTrackerError)
+        .change_context(TrackerError)
         .attach_printable("unable to open database when writing")?
         .write_all(&db.as_bytes())
-        .change_context(FlatFileTrackerError)
+        .change_context(TrackerError)
         .attach_printable("unable to write database when writing")?;
 
     Ok(())
 }
 
-fn load_database<P>(database: P) -> Result<FlatFileDatabase, FlatFileTrackerError>
+fn load_database<P>(database: P) -> Result<FlatFileDatabase, TrackerError>
 where
     P: AsRef<std::path::Path>,
 {
@@ -138,33 +144,33 @@ where
         .create(true)
         .truncate(false)
         .open(database.as_ref())
-        .change_context(FlatFileTrackerError)
+        .change_context(TrackerError)
         .attach_printable("unable to open database when reading")?
         .read_to_string(&mut db_buf)
-        .change_context(FlatFileTrackerError)
+        .change_context(TrackerError)
         .attach_printable("unable to read database when reading")?;
 
     if db_buf.is_empty() {
         return Ok(FlatFileDatabase::default());
     } else {
         Ok(serde_json::from_str(&db_buf)
-            .change_context(FlatFileTrackerError)
+            .change_context(TrackerError)
             .attach_printable("unable to deserialize database data when reading")?)
     }
 }
 
-fn read_lockfile<P>(lockfile: P) -> Result<LockfileData, FlatFileTrackerError>
+fn read_lockfile<P>(lockfile: P) -> Result<LockfileData, TrackerError>
 where
     P: AsRef<std::path::Path>,
 {
     let file = OpenOptions::new()
         .read(true)
         .open(lockfile.as_ref())
-        .change_context(FlatFileTrackerError)
+        .change_context(TrackerError)
         .attach_printable("unable to open lockfile when reading")?;
 
     Ok(serde_json::from_reader(file)
-        .change_context(FlatFileTrackerError)
+        .change_context(TrackerError)
         .attach_printable("unable to deserialize lockfile data when reading")?)
 }
 
@@ -190,7 +196,7 @@ mod tests {
     fn starts_tracking_with_default_tracker() {
         let (_temp, db, lockfile) = tracking_paths();
         // Given a new tracker
-        let tracker = new_tracker(&db, &lockfile);
+        let mut tracker = new_tracker(&db, &lockfile);
 
         // When the tracker is started
         tracker.start().unwrap();
@@ -204,7 +210,7 @@ mod tests {
         let (_temp, db, lockfile) = tracking_paths();
 
         // Given a new tracker
-        let tracker = new_tracker(&db, &lockfile);
+        let mut tracker = new_tracker(&db, &lockfile);
         // When the tracker is started
         tracker.start().unwrap();
         tracker.stop().unwrap();
@@ -218,7 +224,7 @@ mod tests {
         let (_temp, db, lockfile) = tracking_paths();
 
         // Given a new tracker
-        let tracker = new_tracker(&db, &lockfile);
+        let mut tracker = new_tracker(&db, &lockfile);
         // When the tracker is started
         tracker.start().unwrap();
 
@@ -228,5 +234,37 @@ mod tests {
 
         // Then a record is saved
         assert!(tracker.records().unwrap().next().is_some());
+    }
+
+    #[test]
+    fn initial_start_returns_started_state() {
+        let (_temp, db, lockfile) = tracking_paths();
+
+        // Given a new tracker
+        let mut tracker = new_tracker(&db, &lockfile);
+        // When the tracker is started
+        let started = tracker.start().unwrap();
+
+        std::thread::sleep(std::time::Duration::from_secs(1));
+
+        // Then the "already running" state is returned
+        assert_eq!(started, StartupStatus::Started);
+    }
+
+    #[test]
+    fn multiple_starts_returns_already_running_state() {
+        let (_temp, db, lockfile) = tracking_paths();
+
+        // Given a new tracker
+        let mut tracker = new_tracker(&db, &lockfile);
+        // When the tracker is started
+        tracker.start().unwrap();
+
+        std::thread::sleep(std::time::Duration::from_secs(1));
+
+        let started = tracker.start().unwrap();
+
+        // Then the "already running" state is returned
+        assert_eq!(started, StartupStatus::Running);
     }
 }
