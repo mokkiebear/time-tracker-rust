@@ -1,9 +1,12 @@
-use std::path::PathBuf;
+use std::{path::PathBuf, time::Duration};
 
 use clap::{Parser, Subcommand};
 use error_stack::{Result, ResultExt};
-
-use crate::{error::Suggestion, feature::tracker::FlatFileTracker};
+use crate::feature::report_fmt::DurationFormatter;
+use crate::{
+    error::Suggestion,
+    feature::{report_fmt::HMSFormatter, tracker::{FlatFileTracker, ReportTimespan, Reporter}},
+};
 
 use super::tracker::StartupStatus;
 use crate::feature::tracker::Tracker;
@@ -49,8 +52,23 @@ pub fn run() -> Result<(), CLIError> {
             Ok(StartupStatus::Running) => println!("Tracker already running"),
             Err(e) => return Err(e).change_context(CLIError),
         },
-        Command::Stop => tracker.stop().change_context(CLIError).attach_printable("failed to stop tracker")?,
-        Command::Report => todo!(),
+        Command::Stop => tracker
+            .stop()
+            .change_context(CLIError)
+            .attach_printable("failed to stop tracker")?,
+        Command::Report => {
+            const TWENTY_FOUR_HOURS: u64 = 24 * 60 * 60;
+            let duration = Duration::from_secs(TWENTY_FOUR_HOURS);
+
+            let total_duration = tracker
+                .total_duration(ReportTimespan::Last(duration))
+                .change_context(CLIError)
+                .attach_printable("failed to calculate total duration")?;
+
+              let formatter = HMSFormatter::default();
+
+              println!("{}", formatter.format(total_duration));
+        }
     }
 
     Ok(())

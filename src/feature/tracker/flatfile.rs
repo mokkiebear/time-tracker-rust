@@ -11,7 +11,7 @@ use std::{
     path::PathBuf,
 };
 
-use super::{EndTime, StartTime, StartupStatus, TimeRecord, Tracker, TrackerError};
+use super::{EndTime, Reporter, StartTime, StartupStatus, TimeRecord, Tracker, TrackerError};
 
 #[derive(Debug, thiserror::Error)]
 #[error("file system tracker error")]
@@ -37,6 +37,8 @@ pub struct FlatFileTracker {
     database: PathBuf,
     lockfile: PathBuf,
 }
+
+impl Reporter for FlatFileTracker {}
 
 impl FlatFileTracker {
     pub fn new<D, L>(database: D, lockfile: L) -> Self

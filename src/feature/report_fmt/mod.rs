@@ -3,7 +3,7 @@ use std::time::Duration;
 #[derive(Debug, Default)]
 pub struct HMSFormatter;
 
-trait DurationFormatter {
+pub trait DurationFormatter {
     fn format(&self, duration: Duration) -> String;
 }
 
