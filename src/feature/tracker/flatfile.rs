@@ -171,9 +171,9 @@ where
         .change_context(TrackerError)
         .attach_printable("unable to open lockfile when reading")?;
 
-    Ok(serde_json::from_reader(file)
+    serde_json::from_reader(file)
         .change_context(TrackerError)
-        .attach_printable("unable to deserialize lockfile data when reading")?)
+        .attach_printable("unable to deserialize lockfile data when reading")
 }
 
 #[cfg(test)]

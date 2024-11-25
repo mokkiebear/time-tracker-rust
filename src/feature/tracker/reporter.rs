@@ -48,9 +48,7 @@ mod tests {
     use super::*;
 
     impl Reporter for FakeTracker {
-        fn total_duration(&self, _timespan: ReportTimespan) -> Result<Duration, ReporterError> {
-            Ok(Duration::from_millis(0))
-        }
+      
     }
 
     #[test]

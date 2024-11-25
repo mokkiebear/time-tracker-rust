@@ -5,7 +5,7 @@ use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use error_stack::Result;
 
-pub use flatfile::{FlatFileTracker};
+pub use flatfile::FlatFileTracker;
 pub use reporter::{Reporter, ReporterError,ReportTimespan};
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]

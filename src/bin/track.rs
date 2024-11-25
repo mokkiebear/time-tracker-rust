@@ -1,5 +1,5 @@
-use error_stack::{Report,Result, ResultExt};
-use time_tracker_rust::{error::{AppError, Suggestion}, feature, init};
+use error_stack::{Result, ResultExt};
+use time_tracker_rust::{error::{AppError}, feature, init};
 
 fn main() -> Result<(), AppError> {
   init::error_reporting();
